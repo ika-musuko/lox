@@ -66,9 +66,53 @@ public:
         EOF_TOKEN
     };
 
+    static std::string type_to_str(Type type) {
+        switch (type) {
+        case Type::LEFT_PAREN: return "LEFT_PAREN";
+        case Type::RIGHT_PAREN: return "RIGHT_PAREN";
+        case Type::LEFT_BRACE: return "LEFT_BRACE";
+        case Type::RIGHT_BRACE: return "RIGHT_BRACE";
+        case Type::COMMA: return "COMMA";
+        case Type::DOT: return "DOT";
+        case Type::MINUS: return "MINUS";
+        case Type::PLUS: return "PLUS";
+        case Type::SEMICOLON: return "SEMICOLON";
+        case Type::SLASH: return "SLASH";
+        case Type::STAR: return "STAR";
+        case Type::BANG: return "BANG";
+        case Type::BANG_EQUAL: return "BANG_EQUAL";
+        case Type::EQUAL: return "EQUAL";
+        case Type::EQUAL_EQUAL: return "EQUAL_EQUAL";
+        case Type::GREATER: return "GREATER";
+        case Type::GREATER_EQUAL: return "GREATER_EQUAL";
+        case Type::LESS: return "LESS";
+        case Type::LESS_EQUAL: return "LESS_EQUAL";
+        case Type::IDENTIFIER: return "IDENTIFIER";
+        case Type::STRING: return "STRING";
+        case Type::NUMBER: return "NUMBER";
+        case Type::AND: return "AND";
+        case Type::CLASS: return "CLASS";
+        case Type::ELSE: return "ELSE";
+        case Type::FALSE: return "FALSE";
+        case Type::FUN: return "FUN";
+        case Type::FOR: return "FOR";
+        case Type::IF: return "IF";
+        case Type::NIL: return "NIL";
+        case Type::OR: return "OR";
+        case Type::PRINT: return "PRINT";
+        case Type::RETURN: return "RETURN";
+        case Type::SUPER: return "SUPER";
+        case Type::THIS: return "THIS";
+        case Type::TRUE: return "TRUE";
+        case Type::VAR: return "VAR";
+        case Type::WHILE: return "WHILE";
+        case Type::EOF_TOKEN: return "EOF_TOKEN";
+        default: return std::to_string((int)type);
+        }
+    }
+
     Type type;
     std::variant<nullptr_t, double, std::string> value;
-
 
     Token(Type type)
         : type(type)
@@ -88,11 +132,10 @@ public:
     {
     }
 
-
     std::string str() const {
         std::ostringstream oss;
         oss << "<Token"
-            << " type=" << (int)type;
+            << " type=" << type_to_str(type);
         if (std::holds_alternative<double>(value)) {
             oss << " value=" << std::get<double>(value);
         } else if (std::holds_alternative<std::string>(value)) {
@@ -129,6 +172,7 @@ private:
     std::vector<Token> tokens;
     const std::string& code;
     size_t index = 0;
+    int line = 1;
 
     void add_token(Token::Type token_type) {
         tokens.emplace_back(Token(token_type));
@@ -323,7 +367,6 @@ private:
         }
     }
 
-
 public:
     Scanner(const std::string& code)
         : code(code) {
@@ -332,8 +375,12 @@ public:
     Output scan_tokens() {
         tokens = {};
         index = 0;
+        line = 1;
 
         while (index < code.size()) {
+            if (code[index] == '\n') {
+                ++line;
+            }
             advance();
         }
 
