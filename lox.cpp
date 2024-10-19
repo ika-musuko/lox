@@ -3,9 +3,9 @@
 #include <iostream>
 #include <sstream>
 #include <string>
-#include <vector>
-
 #include <sysexits.h>
+#include <variant>
+#include <vector>
 
 // =====
 // utils
@@ -67,17 +67,39 @@ public:
     };
 
     Type type;
+    std::variant<nullptr_t, double, std::string> value;
+
 
     Token(Type type)
         : type(type)
+        , value(nullptr)
     {
     }
 
+    Token(Type type, double value)
+        : type(type)
+        , value(value)
+    {
+    }
+
+    Token(Type type, const std::string& value)
+        : type(type)
+        , value(value)
+    {
+    }
+
+
     std::string str() const {
         std::ostringstream oss;
-        oss << "<Token "
-            << "type=" << (int)type
-            << ">";
+        oss << "<Token"
+            << " type=" << (int)type;
+        if (std::holds_alternative<double>(value)) {
+            oss << " value=" << std::get<double>(value);
+        } else if (std::holds_alternative<std::string>(value)) {
+            if (type == Type::STRING) oss << " value=\"" << std::get<std::string>(value) << '"';
+            else oss << " value=" << std::get<std::string>(value);
+        }
+        oss << ">";
         return oss.str();
     }
 };
@@ -110,6 +132,14 @@ private:
 
     void add_token(Token::Type token_type) {
         tokens.emplace_back(Token(token_type));
+    }
+
+    void add_token(Token::Type token_type, double value) {
+        tokens.emplace_back(Token(token_type, value));
+    }
+
+    void add_token(Token::Type token_type, const std::string& value) {
+        tokens.emplace_back(Token(token_type, value));
     }
 
     void handle_state_default() {
@@ -205,9 +235,11 @@ private:
     }
 
     void handle_state_string() {
+        size_t start = index;
         while (true) {
             if (code[index] == '"') {
-                add_token(Token::Type::STRING);
+                std::string word = str_slice(code, start, index);
+                add_token(Token::Type::STRING, word);
                 state = State::DEFAULT;
                 ++index;
                 return;
@@ -228,9 +260,12 @@ private:
     }
 
     void handle_state_number() {
+        size_t start = index;
         while (true) {
             if (index >= code.size() || !valid_number_character(code[index])) {
-                add_token(Token::Type::NUMBER);
+                std::string double_str = str_slice(code, start, index);
+                double value = std::stod(double_str);
+                add_token(Token::Type::NUMBER, value);
                 state = State::DEFAULT;
                 return;
             }
@@ -270,7 +305,7 @@ private:
             if (index >= code.size() || !valid_keyword_or_identifier_character(code[index])) {
                 std::string word = str_slice(code, start, index);
                 Token::Type token_type = word_to_token_type(word);
-                add_token(token_type);
+                add_token(token_type, word);
                 state = State::DEFAULT;
                 return;
             }
@@ -322,7 +357,6 @@ std::vector<Token> scan_tokens(const std::string& code) {
 
     return scanner_output.tokens;
 }
-
 
 void run(const std::string& code) {
     std::vector<Token> tokens = scan_tokens(code);
