@@ -637,151 +637,6 @@ public:
     std::vector<Error> errors;
 
 private:
-
-    /*
-    Expr* literal() {
-        Expr* expr = Expr::from_literal_token(tokens[index]);
-        if (!expr) {
-            add_error(Error::Type::LITERAL_TOKEN_EXPECTED);
-        }
-        return expr;
-    }
-
-    Expr* grouping() {
-        Expr* expr = nullptr;
-
-        ++index;
-        expr = expression();
-
-        if (token_type() != Token::Type::RIGHT_PAREN) {
-            add_error(Error::Type::UNCLOSED_PAREN);
-            return nullptr;
-        }
-
-        return expr;
-    }
-
-    Expr* primary() {
-        Expr* expr = nullptr;
-        switch (token_type()) {
-        case Token::Type::NUMBER:
-        case Token::Type::STRING:
-        case Token::Type::TRUE:
-        case Token::Type::FALSE:
-        case Token::Type::NIL:
-            ++index;
-            expr = literal();
-            return expr;
-
-        case Token::Type::LEFT_PAREN:
-            ++index;
-            expr = grouping();
-            return expr;
-
-        default: {
-                Error error;
-                error.line = tokens[index].line;
-                error.type = Error::Type::PRIMARY_TOKEN_EXPECTED;
-                errors.emplace_back(error);
-            }
-            return nullptr; // error
-        }
-    }
-
-    Expr* unary() {
-        Expr* expr = nullptr;
-        switch (token_type()) {
-        case Token::Type::MINUS:
-        case Token::Type::BANG:
-            ++index;
-            expr = new Expr(token_type(), unary());
-            return expr;
-
-        default:
-            return primary();
-        }
-    }
-
-    Expr* multiplicative() {
-        Expr* expr = nullptr;
-
-        Expr* lhs = unary();
-        switch (token_type()) {
-        case Token::Type::SLASH:
-        case Token::Type::STAR: {
-            ++index;
-            Expr* rhs = unary();
-            expr = new Expr(token_type(), lhs, rhs);
-            return expr;
-        }
-
-        default:
-            return unary();
-        }
-    }
-
-    Expr* additive() {
-        Expr* expr = nullptr;
-
-        Expr* lhs = unary();
-        switch (token_type()) {
-        case Token::Type::MINUS:
-        case Token::Type::PLUS: {
-            ++index;
-            Expr* rhs = unary();
-            expr = new Expr(token_type(), lhs, rhs);
-            return expr;
-        }
-
-        default:
-            return multiplicative();
-        }
-    }
-
-    Expr* comparison() {
-        Expr* expr = nullptr;
-
-        Expr* lhs = unary();
-        switch (token_type()) {
-        case Token::Type::LESS:
-        case Token::Type::LESS_EQUAL:
-        case Token::Type::GREATER:
-        case Token::Type::GREATER_EQUAL: {
-            ++index;
-            Expr* rhs = unary();
-            expr = new Expr(token_type(), lhs, rhs);
-            return expr;
-        }
-
-        default:
-            return additive();
-        }
-    }
-
-    Expr* equality() {
-        Expr* expr = nullptr;
-
-        Expr* lhs = unary();
-
-        auto token_type = consume_token();
-        if (!token_type) {
-            return nullptr;
-        }
-
-        switch (token_type) {
-        case Token::Type::BANG_EQUAL:
-        case Token::Type::EQUAL_EQUAL: {
-            Expr* rhs = unary();
-            expr = new Expr(token_type(), lhs, rhs);
-            return expr;
-        }
-
-        default:
-            return comparison();
-        }
-    }
-    */
-
     void add_error(Error::Type error_type, const Token& token) {
         Error error;
         error.line = token.line;
@@ -821,8 +676,12 @@ private:
         return expr;
     }
 
+    Expr* primary() {
+        return literal();
+    }
+
     Expr* expression() {
-        Expr* expr = literal();
+        Expr* expr = primary();
 
         Token* unexpected_token = consume_token();
         if (unexpected_token) {

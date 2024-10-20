@@ -1,3 +1,6 @@
-expression = literal ;
+expression = primary ;
+
+primary  = literal | grouping ;
+grouping = "(" expression ")" ;
 literal  = NUMBER | STRING | "true" | "false" | "nil"
 
