@@ -1,7 +1,6 @@
 #include <cctype>
 #include <fstream>
 #include <iostream>
-#include <optional>
 #include <sstream>
 #include <string>
 #include <sysexits.h>
@@ -135,19 +134,22 @@ struct Token {
     std::variant<nullptr_t, double, std::string> value;
 
     Token(int line, Type type)
-        : type(type)
+        : line(line)
+        , type(type)
         , value(nullptr)
     {
     }
 
     Token(int line, Type type, double value)
-        : type(type)
+        : line(line)
+        , type(type)
         , value(value)
     {
     }
 
     Token(int line, Type type, const std::string& value)
-        : type(type)
+        : line(line)
+        , type(type)
         , value(value)
     {
     }
@@ -155,6 +157,7 @@ struct Token {
     std::string str() const {
         std::ostringstream oss;
         oss << "<Token"
+            << " line=" << line
             << " type=" << type_to_str(type);
         if (std::holds_alternative<double>(value)) {
             oss << " value=" << std::get<double>(value);
@@ -458,13 +461,36 @@ public:
 
 class Ast {
 public:
-    Ast(std::vector<Token>&& tokens) {
+    struct Error {
+        int line;
+        std::string str() const {
+            std::ostringstream oss;
+
+            oss << "ERROR [AST]: ";
+            oss << "on line " << line;
+
+            return oss.str();
+        }
+    };
+
+    std::vector<Token> tokens;
+    std::vector<Error> errors;
+
+private:
+
+public:
+    Ast(std::vector<Token>&& tokens)
+        : tokens(tokens)
+    {
     }
 
     std::string str() const {
         return "AST: ";
     }
 
+    bool valid() const {
+        return errors.empty();
+    }
 };
 
 
@@ -484,10 +510,18 @@ void show_tokens(const std::string& code) {
 
 void show_ast(const std::string& code) {
     Scanner scanner(code);
-
     if (!scanner.valid()) {
         report_errors(scanner.errors, scanner.lines);
+        return;
     }
+
+    Ast ast(std::move(scanner.tokens));
+    if (!ast.valid()) {
+        report_errors(ast.errors, scanner.lines);
+        return;
+    }
+
+    std::cout << ast.str() << std::endl;
 }
 
 void run(const std::string& code) {
