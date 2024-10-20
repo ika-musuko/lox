@@ -28,6 +28,25 @@ std::string str_slice(const std::string& str, size_t start, size_t end) {
 
 // =====
 // lox
+template <typename Error>
+void report_errors(
+    const std::vector<Error>& errors,
+    const std::vector<std::string>& lines
+) {
+    for (const auto& error : errors) {
+        std::cerr << error.str() << std::endl;
+        int line_num = error.line;
+
+        if (line_num - 1 >= 1)  {
+            std::cerr << '\t' << std::setw(5) << (line_num - 1) << "| " << lines[line_num - 2] << std::endl;
+        }
+        std::cerr << '\t' << std::setw(5) << line_num << "| " << lines[line_num - 1] << "   <<<<<<<<<< " << std::endl;
+        if (line_num + 1 <= lines.size())  {
+            std::cerr << '\t' << std::setw(5) << (line_num + 1) << "| " << lines[line_num] << std::endl;
+        }
+    }
+}
+
 struct Token {
     enum class Type {
         // Single-character tokens
@@ -435,21 +454,6 @@ public:
     bool valid() const {
         return errors.empty();
     }
-
-    void output_errors() const {
-        for (const auto& error : errors) {
-            std::cerr << error.str() << std::endl;
-            int line_num = error.line;
-
-            if (line_num - 1 >= 1)  {
-                std::cerr << '\t' << std::setw(5) << (line_num - 1) << "| " << lines[line_num - 2] << std::endl;
-            }
-            std::cerr << '\t' << std::setw(5) << line_num << "| " << lines[line_num - 1] << "   <<<<<<<<<< " << std::endl;
-            if (line_num + 1 <= lines.size())  {
-                std::cerr << '\t' << std::setw(5) << (line_num + 1) << "| " << lines[line_num] << std::endl;
-            }
-        }
-    }
 };
 
 class Ast {
@@ -474,7 +478,7 @@ void show_tokens(const std::string& code) {
     }
 
     if (!scanner.valid()) {
-        scanner.output_errors();
+        report_errors(scanner.errors, scanner.lines);
     }
 }
 
@@ -482,7 +486,7 @@ void show_ast(const std::string& code) {
     Scanner scanner(code);
 
     if (!scanner.valid()) {
-        scanner.output_errors();
+        report_errors(scanner.errors, scanner.lines);
     }
 }
 
