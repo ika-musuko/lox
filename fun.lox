@@ -1,0 +1,14 @@
+fun vector(x, y) {
+  fun object(message) {
+    fun add(other) {
+      return vector(x + other("x"), y + other("y"));
+    }
+
+    if (message == "x") return x;
+    if (message == "y") return y;
+    if (message == "add") return add;
+    print "unknown message";
+  }
+
+  return object;
+}

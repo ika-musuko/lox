@@ -1,6 +1,7 @@
 #include <cctype>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <sysexits.h>
@@ -9,7 +10,7 @@
 
 // =====
 // utils
-std::string str_from_file(char* filename) {
+std::string str_from_file(const char* filename) {
     std::ifstream ifs(filename, std::ios::in | std::ios::binary | std::ios::ate);
 
     std::ifstream::pos_type fileSize = ifs.tellg();
@@ -27,8 +28,7 @@ std::string str_slice(const std::string& str, size_t start, size_t end) {
 
 // =====
 // lox
-class Token {
-public:
+struct Token {
     enum class Type {
         // Single-character tokens
         LEFT_PAREN, RIGHT_PAREN,
@@ -111,22 +111,23 @@ public:
         }
     }
 
+    int line;
     Type type;
     std::variant<nullptr_t, double, std::string> value;
 
-    Token(Type type)
+    Token(int line, Type type)
         : type(type)
         , value(nullptr)
     {
     }
 
-    Token(Type type, double value)
+    Token(int line, Type type, double value)
         : type(type)
         , value(value)
     {
     }
 
-    Token(Type type, const std::string& value)
+    Token(int line, Type type, const std::string& value)
         : type(type)
         , value(value)
     {
@@ -149,16 +150,35 @@ public:
 
 class Scanner {
 public:
-    enum class Status {
-        UNKNOWN,
-        SUCCESS,
-        UNTERMINATED_STRING,
+    struct Error {
+        int line;
+        enum class Type {
+            UNKNOWN,
+            UNTERMINATED_STRING,
+        } type;
+
+        std::string str() const {
+            std::ostringstream oss;
+            oss << "ERROR [Scanner]: ";
+
+            switch (type) {
+            case Type::UNTERMINATED_STRING:
+                oss << "Unterminated string ";
+                break;
+            default:
+                oss << "Unknown ";
+                break;
+            }
+            oss << "on line " << line;
+
+            return oss.str();
+        }
     };
 
-    struct Output {
-        std::vector<Token> tokens;
-        Status status;
-    };
+    std::vector<Token> tokens;
+    std::vector<Error> errors;
+    std::vector<std::string> lines;
+    int line = 1;
 
 private:
     enum class State {
@@ -169,21 +189,27 @@ private:
         KEYWORD_OR_IDENTIFIER
     } state = State::DEFAULT;
 
-    std::vector<Token> tokens;
     const std::string& code;
     size_t index = 0;
-    int line = 1;
+    size_t start_line = 0;
 
     void add_token(Token::Type token_type) {
-        tokens.emplace_back(Token(token_type));
+        tokens.emplace_back(Token(line, token_type));
     }
 
     void add_token(Token::Type token_type, double value) {
-        tokens.emplace_back(Token(token_type, value));
+        tokens.emplace_back(Token(line, token_type, value));
     }
 
     void add_token(Token::Type token_type, const std::string& value) {
-        tokens.emplace_back(Token(token_type, value));
+        tokens.emplace_back(Token(line, token_type, value));
+    }
+
+    inline bool is_keyword_or_identifier_start(char c) {
+        return
+            c == '_' ||
+            c == '$' ||
+            std::isalpha(c);
     }
 
     void handle_state_default() {
@@ -261,7 +287,7 @@ private:
         default:
             if (std::isdigit(code[index])) {
                 state = State::NUMBER;
-            } else if (std::isalpha(code[index])) {
+            } else if (is_keyword_or_identifier_start(code[index])) {
                 state = State::KEYWORD_OR_IDENTIFIER;
             } else {
                 std::cerr << "Unexpected character at [" << index << "]: " << code[index] << std::endl;
@@ -280,6 +306,7 @@ private:
 
     void handle_state_string() {
         size_t start = index;
+        start_line = line;
         while (true) {
             if (code[index] == '"') {
                 std::string word = str_slice(code, start, index);
@@ -305,6 +332,7 @@ private:
 
     void handle_state_number() {
         size_t start = index;
+        start_line = line;
         while (true) {
             if (index >= code.size() || !valid_number_character(code[index])) {
                 std::string double_str = str_slice(code, start, index);
@@ -319,7 +347,7 @@ private:
 
 
     inline bool valid_keyword_or_identifier_character(char c) {
-        return std::isalpha(c) || std::isdigit(c);
+        return std::isdigit(c) || is_keyword_or_identifier_start(c);
     }
 
     Token::Type word_to_token_type(const std::string& word) {
@@ -345,6 +373,7 @@ private:
 
     void handle_state_keyword_or_identifier() {
         size_t start = index;
+        start_line = line;
         while (true) {
             if (index >= code.size() || !valid_keyword_or_identifier_character(code[index])) {
                 std::string word = str_slice(code, start, index);
@@ -367,13 +396,9 @@ private:
         }
     }
 
-public:
-    Scanner(const std::string& code)
-        : code(code) {
-    }
-
-    Output scan_tokens() {
+    void scan_tokens() {
         tokens = {};
+        errors = {};
         index = 0;
         line = 1;
 
@@ -384,42 +409,105 @@ public:
             advance();
         }
 
-        Output output;
+        if (state == State::STRING) {
+            Error error;
+            error.line = start_line;
+            error.type = Error::Type::UNTERMINATED_STRING;
+            errors.emplace_back(error);
+        }
+    }
 
-        output.tokens = std::move(tokens);
+    void read_lines() {
+        std::istringstream codess(code);
+        for (std::string l; std::getline(codess, l, '\n');) {
+            lines.emplace_back(l);
+        }
+    }
 
-        output.status = Status::SUCCESS;
-        if (state == State::STRING) output.status = Status::UNTERMINATED_STRING;
+public:
+    Scanner(const std::string& code)
+        : code(code)
+    {
+        read_lines();
+        scan_tokens();
+    }
 
-        return output;
+    bool valid() const {
+        return errors.empty();
+    }
+
+    void output_errors() const {
+        for (const auto& error : errors) {
+            std::cerr << error.str() << std::endl;
+            int line_num = error.line;
+
+            if (line_num - 1 >= 1)  {
+                std::cerr << '\t' << std::setw(5) << (line_num - 1) << "| " << lines[line_num - 2] << std::endl;
+            }
+            std::cerr << '\t' << std::setw(5) << line_num << "| " << lines[line_num - 1] << "   <<<<<<<<<< " << std::endl;
+            if (line_num + 1 <= lines.size())  {
+                std::cerr << '\t' << std::setw(5) << (line_num + 1) << "| " << lines[line_num] << std::endl;
+            }
+        }
     }
 };
 
-std::vector<Token> scan_tokens(const std::string& code) {
-    Scanner::Output scanner_output = Scanner(code).scan_tokens();
-
-    if (scanner_output.status == Scanner::Status::UNTERMINATED_STRING) {
-        std::cerr << "ERROR: Unterminated string" << std::endl;
+class Ast {
+public:
+    Ast(std::vector<Token>&& tokens) {
     }
 
-    return scanner_output.tokens;
+    std::string str() const {
+        return "AST: ";
+    }
+
+};
+
+
+// =====
+// basic lox interface
+void show_tokens(const std::string& code) {
+    Scanner scanner(code);
+
+    for (const auto& token : scanner.tokens) {
+        std::cout << token.str() << std::endl;
+    }
+
+    if (!scanner.valid()) {
+        scanner.output_errors();
+    }
+}
+
+void show_ast(const std::string& code) {
+    Scanner scanner(code);
+
+    if (!scanner.valid()) {
+        scanner.output_errors();
+    }
 }
 
 void run(const std::string& code) {
-    std::vector<Token> tokens = scan_tokens(code);
-    for (const Token& token : tokens) {
-        std::cout << token.str() << std::endl;
-    }
+    show_ast(code);
 }
 
 // =====
-// IO
-void run_file(char* filename) {
+// cmd tool run modes
+void file_show_tokens(const char* filename) {
+    std::string code = str_from_file(filename);
+    show_tokens(code);
+}
+
+void file_show_ast(const char* filename) {
+    std::string code = str_from_file(filename);
+    show_ast(code);
+}
+
+void file_run(const char* filename) {
     std::string code = str_from_file(filename);
     run(code);
 }
 
-void run_prompt() {
+void prompt_run() {
     std::string code;
     while (true) {
         std::cout << "lox> ";
@@ -434,13 +522,23 @@ void run_prompt() {
 // =====
 // main
 int main(int argc, char** argv) {
-    if (argc > 2) {
+    if (argc > 3) {
         std::cerr << "Usage: ./lox [script]" << std::endl;
         return EX_USAGE;
+    } else if (argc == 3) {
+        std::string command = argv[1];
+        std::string file = argv[2];
+        if (command == "tokens") {
+            file_show_tokens(file.c_str());
+        } else if (command == "ast") {
+            file_show_ast(file.c_str());
+        } else {
+            file_run(file.c_str());
+        }
     } else if (argc == 2) {
-        run_file(argv[1]);
+        file_run(argv[1]);
     } else {
-        run_prompt();
+        prompt_run();
     }
 
     return 0;
