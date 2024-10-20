@@ -607,10 +607,11 @@ struct Expr {
 
         std::ostringstream oss;
         oss << "(";
+        oss << op_to_str(op);
         for (Expr* child : children) {
-            oss << (child ? child->str() : "?") << " ";
+            oss << " " << (child ? child->str() : "?");
         }
-        oss << op_to_str(op) << ")";
+        oss << ")";
         return oss.str();
     }
 };

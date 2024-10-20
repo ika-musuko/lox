@@ -1,8 +1,10 @@
-expression = ( unary )? ( ";" )? ;
+expression = ( multiplicative )? ( ";" )? ;
 
-unary    = ( "-" | "!" ) unary
-         | primary ;
-primary  = literal | grouping ;
-grouping = "(" expression ")" ;
-literal  = NUMBER | STRING | "true" | "false" | "nil"
+multiplicative = unary ("/" | "*") unary
+               | unary ;
+unary          = ( "-" | "!" ) unary
+               | primary ;
+primary        = literal | grouping ;
+grouping       = "(" expression ")" ;
+literal        = NUMBER | STRING | "true" | "false" | "nil"
 
