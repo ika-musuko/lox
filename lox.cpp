@@ -600,6 +600,33 @@ struct Expr {
         return expr;
     }
 
+    static Expr* binary_op(const Token& token, Expr* lhs, Expr* rhs) {
+        Op op;
+
+        switch (token.type) {
+        case Token::Type::SLASH: op = Op::DIVIDE; break;
+        case Token::Type::STAR:  op = Op::MULTIPLY; break;
+        case Token::Type::MINUS: op = Op::SUBTRACT; break;
+        case Token::Type::PLUS:  op = Op::ADD; break;
+
+        case Token::Type::GREATER:       op = Op::GREATER_THAN; break;
+        case Token::Type::GREATER_EQUAL: op = Op::GREATER_THAN_OR_EQUAL_TO; break;
+        case Token::Type::LESS:          op = Op::LESS_THAN; break;
+        case Token::Type::LESS_EQUAL:    op = Op::LESS_THAN_OR_EQUAL_TO; break;
+
+        case Token::Type::EQUAL_EQUAL: op = Op::IS_EQUAL; break;
+        case Token::Type::BANG_EQUAL:  op = Op::IS_NOT_EQUAL; break;
+
+        default: return nullptr;
+        }
+
+        Expr* expr = new Expr();
+        expr->op = op;
+        expr->children.emplace_back(lhs);
+        expr->children.emplace_back(rhs);
+        return expr;
+    }
+
     std::string str() const {
         if (op == Op::LITERAL) {
             return Literal::to_string(literal);
@@ -629,6 +656,9 @@ public:
             UNEXPECTED_TOKEN,
             UNARY_OPERAND_EXPECTED,
             INVALID_UNARY_OPERAND,
+            BINARY_LHS_EXPECTED,
+            BINARY_RHS_EXPECTED,
+            INVALID_BINARY_OPERAND,
         } type;
 
         std::string str() const {
@@ -656,6 +686,15 @@ public:
                 break;
             case Type::INVALID_UNARY_OPERAND:
                 oss << "[INVALID_UNARY_OPERAND] Invalid unary operand ";
+                break;
+            case Type::BINARY_LHS_EXPECTED:
+                oss << "[BINARY_LHS_EXPECTED] A number, string, boolean, nil, or (parenthesized expression) is expected before the binary operator ";
+                break;
+            case Type::BINARY_RHS_EXPECTED:
+                oss << "[BINARY_RHS_EXPECTED] A number, string, boolean, nil, or (parenthesized expression) is expected after the binary operator ";
+                break;
+            case Type::INVALID_BINARY_OPERAND:
+                oss << "[INVALID_UNARY_OPERAND] Invalid binary operand ";
                 break;
             default:
                 oss << "[UNKNOWN] Unknown error ";
@@ -754,8 +793,41 @@ private:
         }
     }
 
+    Expr* multiplicative() {
+        Expr* lhs = unary();
+        if (!lhs) {
+            add_error_with_current_token(Error::Type::BINARY_LHS_EXPECTED);
+            return nullptr;
+        }
+
+        consume_token();
+        switch (current_token()->type) {
+        case Token::Type::SLASH:
+        case Token::Type::STAR: {
+            const Token& operator_token = *current_token();
+
+            consume_token();
+            Expr* rhs = unary();
+            if (!rhs) {
+                add_error_with_current_token(Error::Type::BINARY_RHS_EXPECTED);
+                return nullptr;
+            }
+
+            Expr* expr = Expr::binary_op(operator_token, lhs, rhs);
+            if (!expr) {
+                add_error_with_current_token(Error::Type::INVALID_BINARY_OPERAND);
+                return nullptr;
+            }
+            return expr;
+        }
+
+        default:
+            return unary();
+        }
+    }
+
     Expr* expression() {
-        Expr* expr = unary();
+        Expr* expr = multiplicative();
         return expr;
     }
 
