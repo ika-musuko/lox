@@ -1,4 +1,4 @@
-expression = primary ;
+expression = primary ( ";" )?;
 
 primary  = literal | grouping ;
 grouping = "(" expression ")" ;

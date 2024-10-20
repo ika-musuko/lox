@@ -624,7 +624,7 @@ public:
                 oss << "[LITERAL_TOKEN_EXPECTED] A number, string, boolean, or nil is expected ";
                 break;
             case Type::UNEXPECTED_TOKEN:
-                oss << "[UNEXPECTED_TOKEN] An unexpected token is present ";
+                oss << "[UNEXPECTED_TOKEN] An unexpected character is present ";
                 break;
             default:
                 oss << "[UNKNOWN] Unknown error ";
@@ -651,49 +651,66 @@ private:
         add_error(error_type, token);
     }
 
-    Token* consume_token() {
-        if (index >= tokens.size()) {
-            return nullptr;
-        }
+    inline Token* current_token() {
+        return (index < tokens.size())
+            ? &tokens[index]
+            : nullptr;
+    }
 
-        Token* token = &tokens[index];
+    void consume_token() {
         ++index;
-        return token;
     }
 
     Expr* literal() {
-        Token* token = consume_token();
-        if (!token) {
-            add_error_with_current_token(Error::Type::LITERAL_TOKEN_EXPECTED);
+        Expr* expr = Expr::from_literal_token(*current_token());
+        return expr;
+    }
+
+    Expr* grouping() {
+        consume_token();
+        Expr* inner_expr = expression();
+
+        consume_token();
+        if (!current_token() || current_token()->type != Token::Type::RIGHT_PAREN) {
+            add_error_with_current_token(Error::Type::UNCLOSED_PAREN);
             return nullptr;
         }
 
-        if (!token->is_literal_type()) {
-            add_error(Error::Type::LITERAL_TOKEN_EXPECTED, *token);
-            return nullptr;
-        }
-        Expr* expr = Expr::from_literal_token(*token);
-        return expr;
+        return inner_expr;
     }
 
     Expr* primary() {
-        return literal();
+        if (!current_token()) {
+            add_error_with_current_token(Error::Type::PRIMARY_TOKEN_EXPECTED);
+            return nullptr;
+        }
+
+        if (current_token()->is_literal_type()) {
+            return literal();
+        }
+
+        if (current_token()->type == Token::Type::LEFT_PAREN) {
+            return grouping();
+        }
+
+        add_error_with_current_token(Error::Type::PRIMARY_TOKEN_EXPECTED);
+        return nullptr;
     }
 
     Expr* expression() {
-        Expr* expr = primary();
-
-        Token* unexpected_token = consume_token();
-        if (unexpected_token) {
-            add_error(Error::Type::UNEXPECTED_TOKEN, *unexpected_token);
-        }
-
-        return expr;
+        return primary();
     }
 
     void parse() {
         index = 0;
         root_expr = expression();
+
+        consume_token();
+        if (current_token()) {
+            if (current_token()->type != Token::Type::SEMICOLON) {
+                add_error(Error::Type::UNEXPECTED_TOKEN, *current_token());
+            }
+        }
     }
 
 public:
@@ -738,10 +755,6 @@ void show_ast(const std::string& code) {
     if (!scanner.valid()) {
         report_errors(scanner.errors, scanner.lines);
         return;
-    }
-
-    for (const auto& token : scanner.tokens) {
-        std::cout << token.str() << std::endl;
     }
 
     Parser parser(std::move(scanner.tokens));
