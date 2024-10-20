@@ -65,6 +65,7 @@ void report_errors(
         if (line_num + 1 <= lines.size())  {
             std::cerr << '\t' << std::setw(5) << (line_num + 1) << "| " << lines[line_num] << std::endl;
         }
+        std::cerr << std::endl;
     }
 }
 
@@ -555,7 +556,7 @@ struct Expr {
         }
     }
 
-    static Expr* from_literal_token(Token token) {
+    static Expr* from_literal_token(const Token& token) {
         Literal::Literal literal;
         switch (token.type) {
         case Token::Type::TRUE:
@@ -583,6 +584,22 @@ struct Expr {
         return expr;
     }
 
+    static Expr* unary_op(const Token& token, Expr* operand) {
+        Op op;
+
+        switch (token.type) {
+        case Token::Type::MINUS: op = Op::NEGATE; break;
+        case Token::Type::BANG:  op = Op::NOT;    break;
+        default:
+            return nullptr;
+        }
+
+        Expr* expr = new Expr();
+        expr->op = op;
+        expr->children.emplace_back(operand);
+        return expr;
+    }
+
     std::string str() const {
         if (op == Op::LITERAL) {
             return Literal::to_string(literal);
@@ -604,10 +621,13 @@ public:
         int line;
         enum class Type {
             UNKNOWN,
+            EXPRESSION_EXPECTED,
             UNCLOSED_PAREN,
-            PRIMARY_TOKEN_EXPECTED,
+            PRIMARY_EXPECTED,
             LITERAL_TOKEN_EXPECTED,
             UNEXPECTED_TOKEN,
+            UNARY_OPERAND_EXPECTED,
+            INVALID_UNARY_OPERAND,
         } type;
 
         std::string str() const {
@@ -615,16 +635,26 @@ public:
 
             oss << "ERROR [Parser]: ";
             switch (type) {
+            case Type::EXPRESSION_EXPECTED:
+                oss << "[EXPRESSION_EXPECTED] A valid expression is expected ";
+                break;
             case Type::UNCLOSED_PAREN:
                 oss << "[UNCLOSED_PAREN] Unclosed parentheses ";
                 break;
-            case Type::PRIMARY_TOKEN_EXPECTED:
-                oss << "[PRIMARY_TOKEN_EXPECTED] A number, string, boolean, nil, or (parenthesized expression) is expected ";
+            case Type::PRIMARY_EXPECTED:
+                oss << "[PRIMARY_EXPECTED] A number, string, boolean, nil, or (parenthesized expression) is expected ";
+                break;
             case Type::LITERAL_TOKEN_EXPECTED:
                 oss << "[LITERAL_TOKEN_EXPECTED] A number, string, boolean, or nil is expected ";
                 break;
             case Type::UNEXPECTED_TOKEN:
                 oss << "[UNEXPECTED_TOKEN] An unexpected character is present ";
+                break;
+            case Type::UNARY_OPERAND_EXPECTED:
+                oss << "[UNARY_OPERAND_EXPECTED] A number, string, boolean, nil, or (parenthesized expression) is expected after the unary operation ( \"-\", \"!\" ) ";
+                break;
+            case Type::INVALID_UNARY_OPERAND:
+                oss << "[INVALID_UNARY_OPERAND] Invalid unary operand ";
                 break;
             default:
                 oss << "[UNKNOWN] Unknown error ";
@@ -681,7 +711,7 @@ private:
 
     Expr* primary() {
         if (!current_token()) {
-            add_error_with_current_token(Error::Type::PRIMARY_TOKEN_EXPECTED);
+            add_error_with_current_token(Error::Type::PRIMARY_EXPECTED);
             return nullptr;
         }
 
@@ -693,21 +723,58 @@ private:
             return grouping();
         }
 
-        add_error_with_current_token(Error::Type::PRIMARY_TOKEN_EXPECTED);
         return nullptr;
     }
 
+    Expr* unary() {
+        if (!current_token()) {
+            add_error_with_current_token(Error::Type::UNARY_OPERAND_EXPECTED);
+            return nullptr;
+        }
+
+        switch (current_token()->type) {
+        case Token::Type::MINUS:
+        case Token::Type::BANG: {
+            const Token& parent_token = *current_token();
+
+            consume_token();
+            Expr* operand = unary();
+            if (!operand) {
+                add_error_with_current_token(Error::Type::INVALID_UNARY_OPERAND);
+                return nullptr;
+            }
+
+            Expr* expr = Expr::unary_op(parent_token, operand);
+            return expr;
+        }
+
+        default:
+            return primary();
+        }
+    }
+
     Expr* expression() {
-        return primary();
+        Expr* expr = unary();
+        return expr;
     }
 
     void parse() {
+        if (tokens.size() == 0) {
+            return;
+        }
+
         index = 0;
         root_expr = expression();
 
         consume_token();
         if (current_token()) {
             if (current_token()->type != Token::Type::SEMICOLON) {
+                add_error(Error::Type::UNEXPECTED_TOKEN, *current_token());
+                return;
+            }
+
+            consume_token();
+            if (current_token()) {
                 add_error(Error::Type::UNEXPECTED_TOKEN, *current_token());
             }
         }

@@ -1,5 +1,7 @@
-expression = primary ( ";" )?;
+expression = ( unary )? ( ";" )? ;
 
+unary    = ( "-" | "!" ) unary
+         | primary ;
 primary  = literal | grouping ;
 grouping = "(" expression ")" ;
 literal  = NUMBER | STRING | "true" | "false" | "nil"
