@@ -1,6 +1,9 @@
+#include <cassert>
 #include <cctype>
+#include <exception>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <sysexits.h>
@@ -24,6 +27,25 @@ std::string str_from_file(const char* filename) {
 std::string str_slice(const std::string& str, size_t start, size_t end) {
     return str.substr(start, end - start);
 }
+
+// =====
+// error template
+/*
+    struct Error {
+        int line;
+        std::string str() const {
+            std::ostringstream oss;
+
+            oss << "ERROR [_stage_]: ";
+            oss << "on line " << line;
+
+            return oss.str();
+        }
+    };
+    std::vector<Error> errors;
+
+ */
+
 
 // =====
 // lox
@@ -60,23 +82,20 @@ struct Token {
         LESS, LESS_EQUAL,
 
         // literals
-        IDENTIFIER, STRING, NUMBER,
+        IDENTIFIER, STRING, NUMBER, TRUE, FALSE, NIL,
 
         // keywords
         AND,
         CLASS,
         ELSE,
-        FALSE,
         FUN,
         FOR,
         IF,
-        NIL,
         OR,
         PRINT,
         RETURN,
         SUPER,
         THIS,
-        TRUE,
         VAR,
         WHILE,
 
@@ -120,7 +139,6 @@ struct Token {
         case Type::PRINT: return "PRINT";
         case Type::RETURN: return "RETURN";
         case Type::SUPER: return "SUPER";
-        case Type::THIS: return "THIS";
         case Type::TRUE: return "TRUE";
         case Type::VAR: return "VAR";
         case Type::WHILE: return "WHILE";
@@ -131,7 +149,8 @@ struct Token {
 
     int line;
     Type type;
-    std::variant<nullptr_t, double, std::string> value;
+    using Value = std::variant<nullptr_t, double, std::string>;
+    Value value;
 
     Token(int line, Type type)
         : line(line)
@@ -152,6 +171,14 @@ struct Token {
         , type(type)
         , value(value)
     {
+    }
+
+    bool is_literal_type() const {
+        return type == Type::STRING
+            || type == Type::NUMBER
+            || type == Type::TRUE
+            || type == Type::FALSE
+            || type == Type::NIL;
     }
 
     std::string str() const {
@@ -185,10 +212,10 @@ public:
 
             switch (type) {
             case Type::UNTERMINATED_STRING:
-                oss << "Unterminated string ";
+                oss << "[UNTERMINATED_STRING] Unterminated string ";
                 break;
             default:
-                oss << "Unknown ";
+                oss << "[UNKNOWN] Unknown error ";
                 break;
             }
             oss << "on line " << line;
@@ -213,7 +240,7 @@ private:
 
     const std::string& code;
     size_t index = 0;
-    size_t start_line = 0;
+    size_t start_line = 1;
 
     void add_token(Token::Type token_type) {
         tokens.emplace_back(Token(line, token_type));
@@ -423,6 +450,7 @@ private:
         errors = {};
         index = 0;
         line = 1;
+        start_line = 1;
 
         while (index < code.size()) {
             if (code[index] == '\n') {
@@ -459,33 +487,371 @@ public:
     }
 };
 
-class Ast {
+namespace Literal {
+    using Literal = std::variant<nullptr_t, double, std::string, bool>;
+
+    std::string to_string(const Literal& literal) {
+        if (std::holds_alternative<nullptr_t>(literal)) return "nil";
+        if (std::holds_alternative<double>(literal)) return std::to_string(std::get<double>(literal));
+        if (std::holds_alternative<std::string>(literal)) return std::get<std::string>(literal);
+        if (std::holds_alternative<bool>(literal)) {
+            bool value = std::get<bool>(literal);
+            return value
+                ? "true"
+                : "false";
+        }
+        return "@@UNKL@@";
+    }
+
+    std::optional<Literal> from_token_value(const Token::Value& token_value) {
+        if (std::holds_alternative<nullptr_t>(token_value)) return nullptr;
+        if (std::holds_alternative<double>(token_value)) return std::get<double>(token_value);
+        if (std::holds_alternative<std::string>(token_value)) return std::get<std::string>(token_value);
+        return std::nullopt;
+    }
+}
+
+struct Expr {
+    enum class Op {
+        // binary
+        IS_EQUAL, IS_NOT_EQUAL,
+        LESS_THAN, LESS_THAN_OR_EQUAL_TO,
+        GREATER_THAN, GREATER_THAN_OR_EQUAL_TO,
+        SUBTRACT, ADD,
+        DIVIDE, MULTIPLY,
+
+        // unary
+        NEGATE, NOT,
+
+        // nullary
+        LITERAL,
+    } op;
+    std::vector<Expr*> children;
+    Literal::Literal literal;
+
+    static std::string op_to_str(Op op) {
+        switch (op) {
+        case Op::IS_EQUAL: return "IS_EQUAL";
+        case Op::IS_NOT_EQUAL: return "IS_NOT_EQUAL";
+        case Op::LESS_THAN: return "LESS_THAN";
+        case Op::LESS_THAN_OR_EQUAL_TO: return "LESS_THAN_OR_EQUAL_TO";
+        case Op::GREATER_THAN: return "GREATER_THAN";
+        case Op::GREATER_THAN_OR_EQUAL_TO: return "GREATER_THAN_OR_EQUAL_TO";
+        case Op::SUBTRACT: return "SUBTRACT";
+        case Op::ADD: return "ADD";
+        case Op::DIVIDE: return "DIVIDE";
+        case Op::MULTIPLY: return "MULTIPLY";
+        case Op::NEGATE: return "NEGATE";
+        case Op::NOT: return "NOT";
+        case Op::LITERAL: return "LITERAL";
+        }
+    }
+
+    Expr() = default;
+
+    ~Expr() {
+        for (Expr* child : children) {
+            if (child) delete child;
+        }
+    }
+
+    static Expr* from_literal_token(Token token) {
+        Literal::Literal literal;
+        switch (token.type) {
+        case Token::Type::TRUE:
+            literal = true;
+            break;
+        case Token::Type::FALSE:
+            literal = false;
+            break;
+        case Token::Type::NIL:
+            literal = nullptr;
+            break;
+        case Token::Type::NUMBER:
+            literal = std::get<double>(token.value);
+            break;
+        case Token::Type::STRING:
+            literal = std::get<std::string>(token.value);
+            break;
+        default:
+            return nullptr;
+        }
+
+        Expr* expr = new Expr();
+        expr->op = Op::LITERAL;
+        expr->literal = literal;
+        return expr;
+    }
+
+    std::string str() const {
+        if (op == Op::LITERAL) {
+            return Literal::to_string(literal);
+        }
+
+        std::ostringstream oss;
+        oss << "(";
+        for (Expr* child : children) {
+            oss << (child ? child->str() : "?") << " ";
+        }
+        oss << op_to_str(op) << ")";
+        return oss.str();
+    }
+};
+
+class Parser {
 public:
     struct Error {
         int line;
+        enum class Type {
+            UNKNOWN,
+            UNCLOSED_PAREN,
+            PRIMARY_TOKEN_EXPECTED,
+            LITERAL_TOKEN_EXPECTED,
+            UNEXPECTED_TOKEN,
+        } type;
+
         std::string str() const {
             std::ostringstream oss;
 
-            oss << "ERROR [AST]: ";
+            oss << "ERROR [Parser]: ";
+            switch (type) {
+            case Type::UNCLOSED_PAREN:
+                oss << "[UNCLOSED_PAREN] Unclosed parentheses ";
+                break;
+            case Type::PRIMARY_TOKEN_EXPECTED:
+                oss << "[PRIMARY_TOKEN_EXPECTED] A number, string, boolean, nil, or (parenthesized expression) is expected ";
+            case Type::LITERAL_TOKEN_EXPECTED:
+                oss << "[LITERAL_TOKEN_EXPECTED] A number, string, boolean, or nil is expected ";
+                break;
+            case Type::UNEXPECTED_TOKEN:
+                oss << "[UNEXPECTED_TOKEN] An unexpected token is present ";
+                break;
+            default:
+                oss << "[UNKNOWN] Unknown error ";
+                break;
+            }
             oss << "on line " << line;
-
             return oss.str();
         }
     };
-
-    std::vector<Token> tokens;
     std::vector<Error> errors;
 
 private:
 
-public:
-    Ast(std::vector<Token>&& tokens)
-        : tokens(tokens)
-    {
+    /*
+    Expr* literal() {
+        Expr* expr = Expr::from_literal_token(tokens[index]);
+        if (!expr) {
+            add_error(Error::Type::LITERAL_TOKEN_EXPECTED);
+        }
+        return expr;
     }
 
-    std::string str() const {
-        return "AST: ";
+    Expr* grouping() {
+        Expr* expr = nullptr;
+
+        ++index;
+        expr = expression();
+
+        if (token_type() != Token::Type::RIGHT_PAREN) {
+            add_error(Error::Type::UNCLOSED_PAREN);
+            return nullptr;
+        }
+
+        return expr;
+    }
+
+    Expr* primary() {
+        Expr* expr = nullptr;
+        switch (token_type()) {
+        case Token::Type::NUMBER:
+        case Token::Type::STRING:
+        case Token::Type::TRUE:
+        case Token::Type::FALSE:
+        case Token::Type::NIL:
+            ++index;
+            expr = literal();
+            return expr;
+
+        case Token::Type::LEFT_PAREN:
+            ++index;
+            expr = grouping();
+            return expr;
+
+        default: {
+                Error error;
+                error.line = tokens[index].line;
+                error.type = Error::Type::PRIMARY_TOKEN_EXPECTED;
+                errors.emplace_back(error);
+            }
+            return nullptr; // error
+        }
+    }
+
+    Expr* unary() {
+        Expr* expr = nullptr;
+        switch (token_type()) {
+        case Token::Type::MINUS:
+        case Token::Type::BANG:
+            ++index;
+            expr = new Expr(token_type(), unary());
+            return expr;
+
+        default:
+            return primary();
+        }
+    }
+
+    Expr* multiplicative() {
+        Expr* expr = nullptr;
+
+        Expr* lhs = unary();
+        switch (token_type()) {
+        case Token::Type::SLASH:
+        case Token::Type::STAR: {
+            ++index;
+            Expr* rhs = unary();
+            expr = new Expr(token_type(), lhs, rhs);
+            return expr;
+        }
+
+        default:
+            return unary();
+        }
+    }
+
+    Expr* additive() {
+        Expr* expr = nullptr;
+
+        Expr* lhs = unary();
+        switch (token_type()) {
+        case Token::Type::MINUS:
+        case Token::Type::PLUS: {
+            ++index;
+            Expr* rhs = unary();
+            expr = new Expr(token_type(), lhs, rhs);
+            return expr;
+        }
+
+        default:
+            return multiplicative();
+        }
+    }
+
+    Expr* comparison() {
+        Expr* expr = nullptr;
+
+        Expr* lhs = unary();
+        switch (token_type()) {
+        case Token::Type::LESS:
+        case Token::Type::LESS_EQUAL:
+        case Token::Type::GREATER:
+        case Token::Type::GREATER_EQUAL: {
+            ++index;
+            Expr* rhs = unary();
+            expr = new Expr(token_type(), lhs, rhs);
+            return expr;
+        }
+
+        default:
+            return additive();
+        }
+    }
+
+    Expr* equality() {
+        Expr* expr = nullptr;
+
+        Expr* lhs = unary();
+
+        auto token_type = consume_token();
+        if (!token_type) {
+            return nullptr;
+        }
+
+        switch (token_type) {
+        case Token::Type::BANG_EQUAL:
+        case Token::Type::EQUAL_EQUAL: {
+            Expr* rhs = unary();
+            expr = new Expr(token_type(), lhs, rhs);
+            return expr;
+        }
+
+        default:
+            return comparison();
+        }
+    }
+    */
+
+    void add_error(Error::Type error_type, const Token& token) {
+        Error error;
+        error.line = token.line;
+        error.type = error_type;
+        errors.emplace_back(error);
+    }
+
+    void add_error_with_current_token(Error::Type error_type) {
+        const Token& token = (index >= tokens.size())
+            ? tokens[tokens.size() - 1] // out of tokens, use last token
+            : tokens[index];
+        add_error(error_type, token);
+    }
+
+    Token* consume_token() {
+        if (index >= tokens.size()) {
+            return nullptr;
+        }
+
+        Token* token = &tokens[index];
+        ++index;
+        return token;
+    }
+
+    Expr* literal() {
+        Token* token = consume_token();
+        if (!token) {
+            add_error_with_current_token(Error::Type::LITERAL_TOKEN_EXPECTED);
+            return nullptr;
+        }
+
+        if (!token->is_literal_type()) {
+            add_error(Error::Type::LITERAL_TOKEN_EXPECTED, *token);
+            return nullptr;
+        }
+        Expr* expr = Expr::from_literal_token(*token);
+        return expr;
+    }
+
+    Expr* expression() {
+        Expr* expr = literal();
+
+        Token* unexpected_token = consume_token();
+        if (unexpected_token) {
+            add_error(Error::Type::UNEXPECTED_TOKEN, *unexpected_token);
+        }
+
+        return expr;
+    }
+
+    void parse() {
+        index = 0;
+        root_expr = expression();
+    }
+
+public:
+    Expr* root_expr = nullptr;
+    std::vector<Token> tokens;
+    size_t index = 0;
+
+    Parser(std::vector<Token>&& tokens)
+        : tokens(tokens)
+    {
+        parse();
+    }
+
+    ~Parser() {
+        if (root_expr) {
+            delete root_expr;
+        }
     }
 
     bool valid() const {
@@ -515,13 +881,18 @@ void show_ast(const std::string& code) {
         return;
     }
 
-    Ast ast(std::move(scanner.tokens));
-    if (!ast.valid()) {
-        report_errors(ast.errors, scanner.lines);
-        return;
+    for (const auto& token : scanner.tokens) {
+        std::cout << token.str() << std::endl;
     }
 
-    std::cout << ast.str() << std::endl;
+    Parser parser(std::move(scanner.tokens));
+    if (!parser.valid()) {
+        report_errors(parser.errors, scanner.lines);
+        return;
+    }
+    if (parser.root_expr) {
+        std::cout << parser.root_expr->str() << std::endl;
+    }
 }
 
 void run(const std::string& code) {
@@ -570,6 +941,8 @@ int main(int argc, char** argv) {
             file_show_tokens(file.c_str());
         } else if (command == "ast") {
             file_show_ast(file.c_str());
+        } else if (command == "exec") {
+            run(argv[2]);
         } else {
             file_run(file.c_str());
         }

@@ -1,0 +1,27 @@
+expression = equality ;
+
+equality       = comparison ( "==" | "!=" ) comparison
+               | comparison
+               ;
+
+comparison     = additive ( "<" | "<=" | ">" | ">=" ) additive
+               | additive
+               ;
+
+additive       = multiplicative ("-" | "+") multiplicative
+               | multiplicative
+               ;
+
+multiplicative = unary ("/" | "*") unary
+               | unary
+               ;
+
+unary          = ( "-" | "!" ) unary
+               | primary
+               ;
+
+primary        = literal | grouping ;
+
+
+literal  = NUMBER | STRING | "true" | "false" | "nil"
+grouping = "(" expression ")" ;
