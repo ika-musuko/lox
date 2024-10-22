@@ -1,7 +1,7 @@
-expression = ( multiplicative )? ( ";" )? ;
+expression = ( multiplicative )? ;
 
-multiplicative = unary ("/" | "*") unary
-               | unary ;
+multiplicative = unary ( ("/" | "*") unary )* ;
+
 unary          = ( "-" | "!" ) unary
                | primary ;
 primary        = literal | grouping ;

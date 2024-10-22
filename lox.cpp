@@ -647,6 +647,7 @@ class Parser {
 public:
     struct Error {
         int line;
+        // @pet
         enum class Type {
             UNKNOWN,
             EXPRESSION_EXPECTED,
@@ -656,7 +657,9 @@ public:
             UNEXPECTED_TOKEN,
             UNARY_OPERAND_EXPECTED,
             INVALID_UNARY_OPERAND,
+            INVALID_UNARY_OPERATOR,
             BINARY_LHS_EXPECTED,
+            INVALID_BINARY_OPERATOR,
             BINARY_RHS_EXPECTED,
             INVALID_BINARY_OPERAND,
         } type;
@@ -687,8 +690,14 @@ public:
             case Type::INVALID_UNARY_OPERAND:
                 oss << "[INVALID_UNARY_OPERAND] Invalid unary operand ";
                 break;
+            case Type::INVALID_UNARY_OPERATOR:
+                oss << "[INVALID_UNARY_OPERAND] Invalid unary operator, expected \"-\" or \"!\" ";
+                break;
             case Type::BINARY_LHS_EXPECTED:
                 oss << "[BINARY_LHS_EXPECTED] A number, string, boolean, nil, or (parenthesized expression) is expected before the binary operator ";
+                break;
+            case Type::INVALID_BINARY_OPERATOR:
+                oss << "[INVALID_BINARY_OPERATOR] Invalid binary operator, expected arithmetic or comparison operator ";
                 break;
             case Type::BINARY_RHS_EXPECTED:
                 oss << "[BINARY_RHS_EXPECTED] A number, string, boolean, nil, or (parenthesized expression) is expected after the binary operator ";
@@ -727,7 +736,7 @@ private:
             : nullptr;
     }
 
-    void consume_token() {
+    inline void consume_token() {
         ++index;
     }
 
@@ -775,7 +784,7 @@ private:
         switch (current_token()->type) {
         case Token::Type::MINUS:
         case Token::Type::BANG: {
-            const Token& parent_token = *current_token();
+            const Token& operator_token = *current_token();
 
             consume_token();
             Expr* operand = unary();
@@ -784,7 +793,10 @@ private:
                 return nullptr;
             }
 
-            Expr* expr = Expr::unary_op(parent_token, operand);
+            Expr* expr = Expr::unary_op(operator_token, operand);
+            if (!expr) {
+                add_error_with_current_token(Error::Type::INVALID_UNARY_OPERATOR);
+            }
             return expr;
         }
 
@@ -800,30 +812,53 @@ private:
             return nullptr;
         }
 
+        Expr* parent_expr = lhs;
+        Expr* rhs = nullptr;
+
         consume_token();
-        switch (current_token()->type) {
-        case Token::Type::SLASH:
-        case Token::Type::STAR: {
+        std::vector<Token::Type> op_token_types {Token::Type::SLASH, Token::Type::STAR};
+        while (current_token()) {
+            // if we are chaining operations together
+            // use the previously parsed Expr (parent_expr)
+            // as the lhs and determine new rhs
+            if (rhs) {
+                lhs = parent_expr;
+                rhs = nullptr;
+            }
+
+            // determine if this is an operator token
+            bool is_op_token = false;
+            for (Token::Type token_type : op_token_types) {
+                if (current_token()->type == token_type) {
+                    is_op_token = true;
+                    break;
+                }
+            }
+            if (!is_op_token) {
+                add_error_with_current_token(Error::Type::INVALID_BINARY_OPERATOR);
+                return nullptr;
+            }
+
             const Token& operator_token = *current_token();
 
+            // process rhs
             consume_token();
-            Expr* rhs = unary();
+            rhs = unary();
             if (!rhs) {
                 add_error_with_current_token(Error::Type::BINARY_RHS_EXPECTED);
                 return nullptr;
             }
 
-            Expr* expr = Expr::binary_op(operator_token, lhs, rhs);
-            if (!expr) {
-                add_error_with_current_token(Error::Type::INVALID_BINARY_OPERAND);
+            parent_expr = Expr::binary_op(operator_token, lhs, rhs);
+            if (!parent_expr) {
+                add_error_with_current_token(Error::Type::INVALID_BINARY_OPERATOR);
                 return nullptr;
             }
-            return expr;
+
+            consume_token();
         }
 
-        default:
-            return unary();
-        }
+        return parent_expr;
     }
 
     Expr* expression() {
