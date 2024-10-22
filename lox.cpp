@@ -1,6 +1,5 @@
 #include <cassert>
 #include <cctype>
-#include <exception>
 #include <fstream>
 #include <iostream>
 #include <optional>
@@ -320,6 +319,7 @@ private:
                 add_token(Token::Type::LESS);
                 index += 1;
             }
+            break;
         case '/':
             if (index+1 < code.size() && code[index+1] == '/') {
                 state = State::COMMENT;
@@ -740,6 +740,10 @@ private:
         ++index;
     }
 
+    inline void backtrack_token() {
+        --index;
+    }
+
     Expr* literal() {
         Expr* expr = Expr::from_literal_token(*current_token());
         return expr;
@@ -805,8 +809,11 @@ private:
         }
     }
 
-    Expr* multiplicative() {
-        Expr* lhs = unary();
+    Expr* binary(
+        const std::vector<Token::Type>& op_token_types,
+        Expr* (Parser::*constituent)()
+    ) {
+        Expr* lhs = (this->*constituent)();
         if (!lhs) {
             add_error_with_current_token(Error::Type::BINARY_LHS_EXPECTED);
             return nullptr;
@@ -816,7 +823,6 @@ private:
         Expr* rhs = nullptr;
 
         consume_token();
-        std::vector<Token::Type> op_token_types {Token::Type::SLASH, Token::Type::STAR};
         while (current_token()) {
             // if we are chaining operations together
             // use the previously parsed Expr (parent_expr)
@@ -835,15 +841,19 @@ private:
                 }
             }
             if (!is_op_token) {
-                add_error_with_current_token(Error::Type::INVALID_BINARY_OPERATOR);
-                return nullptr;
+                // this is not necessarily an invalid operator,
+                // it could be an operator of lower precedence.
+                //
+                // return control to caller and let them handle it
+                backtrack_token();
+                return lhs;
             }
 
             const Token& operator_token = *current_token();
 
             // process rhs
             consume_token();
-            rhs = unary();
+            rhs = (this->*constituent)();
             if (!rhs) {
                 add_error_with_current_token(Error::Type::BINARY_RHS_EXPECTED);
                 return nullptr;
@@ -861,8 +871,39 @@ private:
         return parent_expr;
     }
 
+    Expr* multiplicative() {
+        return binary(
+            {Token::Type::SLASH, Token::Type::STAR},
+            &Parser::unary
+        );
+    }
+
+    Expr* additive() {
+        return binary(
+            {Token::Type::MINUS, Token::Type::PLUS},
+            &Parser::multiplicative
+        );
+    }
+
+    Expr* comparison() {
+        return binary(
+            {
+                Token::Type::LESS,    Token::Type::LESS_EQUAL,
+                Token::Type::GREATER, Token::Type::GREATER_EQUAL
+            },
+            &Parser::additive
+        );
+    }
+
+    Expr* equality() {
+        return binary(
+            {Token::Type::EQUAL_EQUAL, Token::Type::BANG_EQUAL},
+            &Parser::comparison
+        );
+    }
+
     Expr* expression() {
-        Expr* expr = multiplicative();
+        Expr* expr = equality();
         return expr;
     }
 
@@ -876,15 +917,7 @@ private:
 
         consume_token();
         if (current_token()) {
-            if (current_token()->type != Token::Type::SEMICOLON) {
-                add_error(Error::Type::UNEXPECTED_TOKEN, *current_token());
-                return;
-            }
-
-            consume_token();
-            if (current_token()) {
-                add_error(Error::Type::UNEXPECTED_TOKEN, *current_token());
-            }
+            add_error(Error::Type::UNEXPECTED_TOKEN, *current_token());
         }
     }
 

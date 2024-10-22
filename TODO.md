@@ -1,5 +1,6 @@
 - [x] token breakdown
 - [x] token value parsing
 - [x] file support
-- [ ] error handling mechanism
-- [ ] ast generation
+- [x] error handling mechanism
+- [x] ast generation for expressions
+- [ ] implement [panic mode error recovery](https://craftinginterpreters.com/parsing-expressions.html#panic-mode-error-recovery)

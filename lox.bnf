@@ -1,27 +1,13 @@
-expression = equality ;
+expression = ( equality )? ;
 
-equality       = comparison ( "==" | "!=" ) comparison
-               | comparison
-               ;
-
-comparison     = additive ( "<" | "<=" | ">" | ">=" ) additive
-               | additive
-               ;
-
-additive       = multiplicative ("-" | "+") multiplicative
-               | multiplicative
-               ;
-
-multiplicative = unary ("/" | "*") unary
-               | unary
-               ;
+equality       = comparison ( ( "==" | "!=" ) comparison )* ;
+comparison     = additive ( ( "<" | "<=" | ">" | ">=" ) additive )* ;
+additive       = multiplicative ( ("-" | "+") multiplicative )* ;
+multiplicative = unary ( ("/" | "*") unary )* ;
 
 unary          = ( "-" | "!" ) unary
-               | primary
-               ;
-
+               | primary ;
 primary        = literal | grouping ;
+grouping       = "(" expression ")" ;
+literal        = NUMBER | STRING | "true" | "false" | "nil"
 
-
-literal  = NUMBER | STRING | "true" | "false" | "nil"
-grouping = "(" expression ")" ;
