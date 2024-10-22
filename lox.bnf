@@ -1,4 +1,4 @@
-expression = ( equality )? ;
+expression = ( equality )? ( ";" )? ;
 
 equality       = comparison ( ( "==" | "!=" ) comparison )* ;
 comparison     = additive ( ( "<" | "<=" | ">" | ">=" ) additive )* ;

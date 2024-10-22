@@ -904,7 +904,18 @@ private:
 
     Expr* expression() {
         Expr* expr = equality();
-        return expr;
+
+        consume_token();
+        if (!current_token()) {
+            return expr;
+        }
+
+        if (current_token()->type == Token::Type::SEMICOLON) {
+            return expr;
+        }
+
+        add_error_with_current_token(Error::Type::UNEXPECTED_TOKEN);
+        return nullptr;
     }
 
     void parse() {
