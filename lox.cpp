@@ -41,7 +41,6 @@ std::string str_slice(const std::string& str, size_t start, size_t end) {
             return oss.str();
         }
     };
-    std::vector<Error> errors;
 
  */
 
@@ -49,23 +48,21 @@ std::string str_slice(const std::string& str, size_t start, size_t end) {
 // =====
 // lox
 template <typename Error>
-void report_errors(
-    const std::vector<Error>& errors,
+void report_error(
+    const Error& error,
     const std::vector<std::string>& lines
 ) {
-    for (const auto& error : errors) {
-        std::cerr << error.str() << std::endl;
-        int line_num = error.line;
+    std::cerr << error.str() << std::endl;
+    int line_num = error.line;
 
-        if (line_num - 1 >= 1)  {
-            std::cerr << '\t' << std::setw(5) << (line_num - 1) << "| " << lines[line_num - 2] << std::endl;
-        }
-        std::cerr << '\t' << std::setw(5) << line_num << "| " << lines[line_num - 1] << "   <<<<<<<<<< " << std::endl;
-        if (line_num + 1 <= lines.size())  {
-            std::cerr << '\t' << std::setw(5) << (line_num + 1) << "| " << lines[line_num] << std::endl;
-        }
-        std::cerr << std::endl;
+    if (line_num - 1 >= 1)  {
+        std::cerr << '\t' << std::setw(5) << (line_num - 1) << "| " << lines[line_num - 2] << std::endl;
     }
+    std::cerr << '\t' << std::setw(5) << line_num << "| " << lines[line_num - 1] << "   <<<<<<<<<< " << std::endl;
+    if (line_num + 1 <= lines.size())  {
+        std::cerr << '\t' << std::setw(5) << (line_num + 1) << "| " << lines[line_num] << std::endl;
+    }
+    std::cerr << std::endl;
 }
 
 struct Token {
@@ -225,7 +222,7 @@ public:
     };
 
     std::vector<Token> tokens;
-    std::vector<Error> errors;
+    std::optional<Error> error = std::nullopt;
     std::vector<std::string> lines;
     int line = 1;
 
@@ -448,7 +445,7 @@ private:
 
     void scan_tokens() {
         tokens = {};
-        errors = {};
+        error = std::nullopt;
         index = 0;
         line = 1;
         start_line = 1;
@@ -460,11 +457,10 @@ private:
             advance();
         }
 
-        if (state == State::STRING) {
-            Error error;
-            error.line = start_line;
-            error.type = Error::Type::UNTERMINATED_STRING;
-            errors.emplace_back(error);
+        if (state == State::STRING && !error) {
+            error = std::make_optional<Error>();
+            error->line = start_line;
+            error->type = Error::Type::UNTERMINATED_STRING;
         }
     }
 
@@ -481,10 +477,6 @@ public:
     {
         read_lines();
         scan_tokens();
-    }
-
-    bool valid() const {
-        return errors.empty();
     }
 };
 
@@ -906,14 +898,16 @@ public:
             return oss.str();
         }
     };
-    std::vector<Error> errors;
+
+    std::optional<Error> error = std::nullopt;
 
 private:
     void add_error(Error::Type error_type, const Token& token) {
-        Error error;
-        error.line = token.line;
-        error.type = error_type;
-        errors.emplace_back(error);
+        if (error) return;
+
+        error = std::make_optional<Error>();
+        error->line = token.line;
+        error->type = error_type;
     }
 
     void add_error_with_current_token(Error::Type error_type) {
@@ -1148,10 +1142,6 @@ public:
             delete root_expr;
         }
     }
-
-    bool valid() const {
-        return errors.empty();
-    }
 };
 
 
@@ -1164,21 +1154,21 @@ void show_tokens(const std::string& code) {
         std::cout << token.str() << std::endl;
     }
 
-    if (!scanner.valid()) {
-        report_errors(scanner.errors, scanner.lines);
+    if (scanner.error) {
+        report_error(*scanner.error, scanner.lines);
     }
 }
 
 void show_ast(const std::string& code) {
     Scanner scanner(code);
-    if (!scanner.valid()) {
-        report_errors(scanner.errors, scanner.lines);
+    if (scanner.error) {
+        report_error(*scanner.error, scanner.lines);
         return;
     }
 
     Parser parser(std::move(scanner.tokens));
-    if (!parser.valid()) {
-        report_errors(parser.errors, scanner.lines);
+    if (parser.error) {
+        report_error(*parser.error, scanner.lines);
         return;
     }
     if (parser.root_expr) {
@@ -1188,14 +1178,14 @@ void show_ast(const std::string& code) {
 
 void evaluate(const std::string& code) {
     Scanner scanner(code);
-    if (!scanner.valid()) {
-        report_errors(scanner.errors, scanner.lines);
+    if (scanner.error) {
+        report_error(*scanner.error, scanner.lines);
         return;
     }
 
     Parser parser(std::move(scanner.tokens));
-    if (!parser.valid()) {
-        report_errors(parser.errors, scanner.lines);
+    if (parser.error) {
+        report_error(*parser.error, scanner.lines);
         return;
     }
 
