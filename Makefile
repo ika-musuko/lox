@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -std=c++17 -Wall -g -fsanitize=address
+CXXFLAGS = -std=c++17 -Wall -g
 SRC = $(wildcard *.cpp)
 OBJ = $(SRC:.cpp=.o)
 EXEC = lox

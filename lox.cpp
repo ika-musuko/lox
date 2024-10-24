@@ -612,6 +612,7 @@ struct Expr {
                                                     default: return ResultError::OPERATOR_UNDEFINED_FOR_TYPE;
                                                 }
                                             }
+
                 case Literal::Type::NUMBER: {
                                                 double number = std::get<double>(operand_literal.value);
                                                 switch (op) {
@@ -620,7 +621,6 @@ struct Expr {
                                                     default: return ResultError::OPERATOR_UNDEFINED_FOR_TYPE;
                                                 }
                                             }
-
 
                 case Literal::Type::STRING: {
                                                 std::string str = std::get<std::string>(operand_literal.value);
