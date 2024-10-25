@@ -523,10 +523,16 @@ struct Literal {
         }
     }
 
+    static std::string double_str(double d) {
+        std::ostringstream oss;
+        oss << std::defaultfloat << d;
+        return oss.str();
+    }
+
     std::string str() const {
         switch (type) {
             case Type::NIL:    return "nil";
-            case Type::NUMBER: return std::to_string(std::get<double>(value));
+            case Type::NUMBER: return double_str(std::get<double>(value));
             case Type::STRING: return std::get<std::string>(value);
             case Type::BOOL:   return std::get<bool>(value) ? "true" : "false";
             default: return "@@UNK@@";
