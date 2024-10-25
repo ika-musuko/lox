@@ -1,5 +1,9 @@
-program = statement* EOF ;
+program = declaration* EOF ;
 
+declaration = varDecl
+            | printStmt ;
+
+varDecl   = "var" IDENTIFIER ( "=" expression )? ";" ;
 statement = exprStmt
           | printStmt ;
 
@@ -15,7 +19,7 @@ multiplicative = unary ( ("/" | "*") unary )* ;
 
 unary          = ( "-" | "!" ) unary
                | primary ;
-primary        = literal | grouping ;
+primary        = literal | grouping | IDENTIFIER ;
 grouping       = "(" expression ")" ;
 literal        = NUMBER | STRING | "true" | "false" | "nil"
 

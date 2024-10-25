@@ -3,4 +3,10 @@
 - [x] file support
 - [x] error handling mechanism
 - [x] ast generation for expressions
-- [ ] implement [panic mode error recovery](https://craftinginterpreters.com/parsing-expressions.html#panic-mode-error-recovery)
+- [x] expression statment
+- [x] print statment
+- [ ] var statement
+    - [x] overall plumbing
+    - [ ] fix this: var bmi = (703 * lbs) / (in * in);
+        - works by itself as expression
+        - print works fine too
