@@ -828,6 +828,78 @@ struct Expr {
     }
 };
 
+struct Stmt {
+    int line;
+    struct Error {
+        int line;
+        std::optional<Expr::ResultError> expr_error = std::nullopt;
+
+        enum class Type {
+            PRINT,
+        } type;
+
+        std::string str() const {
+            std::ostringstream oss;
+
+            oss << "ERROR [Execution]: ";
+            oss << explain();
+            if (expr_error) {
+                oss << Expr::explain_result_error(*expr_error);
+            }
+            oss << "on line " << line;
+
+            return oss.str();
+        }
+
+        std::string explain() const {
+            switch (type) {
+                case Type::PRINT: return "Failure to print expression ";
+                default: "unknown";
+            }
+        }
+    };
+
+    virtual std::optional<Error> execute() = 0;
+    virtual ~Stmt() {}
+};
+
+struct ExprStmt : public Stmt {
+    Expr* expr;
+    std::optional<Stmt::Error> execute() override {
+        Expr::Result result = expr->evaluate();
+        if (std::holds_alternative<Expr::ResultError>(result)) {
+            Expr::ResultError expr_error = std::get<Expr::ResultError>(result);
+            Stmt::Error stmt_error;
+            stmt_error.line = line;
+            stmt_error.type = Stmt::Error::Type::PRINT;
+            stmt_error.expr_error = expr_error;
+            return stmt_error;
+        }
+        Literal literal = std::get<Literal>(result);
+        //
+        // ?? i guess you do nothing with this?
+        return std::nullopt;
+    }
+};
+
+struct PrintStmt : public Stmt {
+    Expr* expr;
+    std::optional<Stmt::Error> execute() override {
+        Expr::Result result = expr->evaluate();
+        if (std::holds_alternative<Expr::ResultError>(result)) {
+            Expr::ResultError expr_error = std::get<Expr::ResultError>(result);
+            Stmt::Error stmt_error;
+            stmt_error.line = line;
+            stmt_error.type = Stmt::Error::Type::PRINT;
+            stmt_error.expr_error = expr_error;
+            return stmt_error;
+        }
+        Literal literal = std::get<Literal>(result);
+        std::cout << literal.str() << std::endl;
+        return std::nullopt;
+    }
+};
+
 class Parser {
 public:
     struct Error {
@@ -847,6 +919,7 @@ public:
             INVALID_BINARY_OPERATOR,
             BINARY_RHS_EXPECTED,
             INVALID_BINARY_OPERAND,
+            SEMICOLON_EXPECTED,
         } type;
 
         std::string str() const {
@@ -854,45 +927,48 @@ public:
 
             oss << "ERROR [Parser]: ";
             switch (type) {
-            case Type::EXPRESSION_EXPECTED:
-                oss << "[EXPRESSION_EXPECTED] A valid expression is expected ";
-                break;
-            case Type::UNCLOSED_PAREN:
-                oss << "[UNCLOSED_PAREN] Unclosed parentheses ";
-                break;
-            case Type::PRIMARY_EXPECTED:
-                oss << "[PRIMARY_EXPECTED] A number, string, boolean, nil, or (parenthesized expression) is expected ";
-                break;
-            case Type::LITERAL_TOKEN_EXPECTED:
-                oss << "[LITERAL_TOKEN_EXPECTED] A number, string, boolean, or nil is expected ";
-                break;
-            case Type::UNEXPECTED_TOKEN:
-                oss << "[UNEXPECTED_TOKEN] An unexpected character is present ";
-                break;
-            case Type::UNARY_OPERAND_EXPECTED:
-                oss << "[UNARY_OPERAND_EXPECTED] A number, string, boolean, nil, or (parenthesized expression) is expected after the unary operation ( \"-\", \"!\" ) ";
-                break;
-            case Type::INVALID_UNARY_OPERAND:
-                oss << "[INVALID_UNARY_OPERAND] Invalid unary operand ";
-                break;
-            case Type::INVALID_UNARY_OPERATOR:
-                oss << "[INVALID_UNARY_OPERAND] Invalid unary operator, expected \"-\" or \"!\" ";
-                break;
-            case Type::BINARY_LHS_EXPECTED:
-                oss << "[BINARY_LHS_EXPECTED] A number, string, boolean, nil, or (parenthesized expression) is expected before the binary operator ";
-                break;
-            case Type::INVALID_BINARY_OPERATOR:
-                oss << "[INVALID_BINARY_OPERATOR] Invalid binary operator, expected arithmetic or comparison operator ";
-                break;
-            case Type::BINARY_RHS_EXPECTED:
-                oss << "[BINARY_RHS_EXPECTED] A number, string, boolean, nil, or (parenthesized expression) is expected after the binary operator ";
-                break;
-            case Type::INVALID_BINARY_OPERAND:
-                oss << "[INVALID_UNARY_OPERAND] Invalid binary operand ";
-                break;
-            default:
-                oss << "[UNKNOWN] Unknown error ";
-                break;
+                case Type::EXPRESSION_EXPECTED:
+                    oss << "[EXPRESSION_EXPECTED] A valid expression is expected ";
+                    break;
+                case Type::UNCLOSED_PAREN:
+                    oss << "[UNCLOSED_PAREN] Unclosed parentheses ";
+                    break;
+                case Type::PRIMARY_EXPECTED:
+                    oss << "[PRIMARY_EXPECTED] A number, string, boolean, nil, or (parenthesized expression) is expected ";
+                    break;
+                case Type::LITERAL_TOKEN_EXPECTED:
+                    oss << "[LITERAL_TOKEN_EXPECTED] A number, string, boolean, or nil is expected ";
+                    break;
+                case Type::UNEXPECTED_TOKEN:
+                    oss << "[UNEXPECTED_TOKEN] An unexpected character is present ";
+                    break;
+                case Type::UNARY_OPERAND_EXPECTED:
+                    oss << "[UNARY_OPERAND_EXPECTED] A number, string, boolean, nil, or (parenthesized expression) is expected after the unary operation ( \"-\", \"!\" ) ";
+                    break;
+                case Type::INVALID_UNARY_OPERAND:
+                    oss << "[INVALID_UNARY_OPERAND] Invalid unary operand ";
+                    break;
+                case Type::INVALID_UNARY_OPERATOR:
+                    oss << "[INVALID_UNARY_OPERAND] Invalid unary operator, expected \"-\" or \"!\" ";
+                    break;
+                case Type::BINARY_LHS_EXPECTED:
+                    oss << "[BINARY_LHS_EXPECTED] A number, string, boolean, nil, or (parenthesized expression) is expected before the binary operator ";
+                    break;
+                case Type::INVALID_BINARY_OPERATOR:
+                    oss << "[INVALID_BINARY_OPERATOR] Invalid binary operator, expected arithmetic or comparison operator ";
+                    break;
+                case Type::BINARY_RHS_EXPECTED:
+                    oss << "[BINARY_RHS_EXPECTED] A number, string, boolean, nil, or (parenthesized expression) is expected after the binary operator ";
+                    break;
+                case Type::INVALID_BINARY_OPERAND:
+                    oss << "[INVALID_UNARY_OPERAND] Invalid binary operand ";
+                    break;
+                case Type::SEMICOLON_EXPECTED:
+                    oss << "[SEMICOLON_EXPECTED] Semicolon ; expected at end of line ";
+                    break;
+                default:
+                    oss << "[UNKNOWN] Unknown error ";
+                    break;
             }
             oss << "on line " << line;
             return oss.str();
@@ -1101,10 +1177,6 @@ private:
             return expr;
         }
 
-        if (current_token()->type == Token::Type::SEMICOLON) {
-            return expr;
-        }
-
         // the current token could be a right parenthesis, which is
         // part of a grouping.
         // let the caller handle it
@@ -1112,13 +1184,81 @@ private:
         return expr;
     }
 
+    bool check_semicolon() {
+        if (!current_token() || current_token()->type != Token::Type::SEMICOLON) {
+            backtrack_token();
+            add_error_with_current_token(Error::Type::SEMICOLON_EXPECTED);
+            return false;
+        }
+        return true;
+    }
+
+    Stmt* expr_stmt() {
+        Expr* expr = expression();
+        if (!expr) {
+            return nullptr;
+        }
+
+        consume_token();
+        check_semicolon();
+        consume_token();
+
+        ExprStmt* stmt = new ExprStmt;
+        stmt->expr = expr;
+        return stmt;
+    }
+
+    Stmt* print_stmt() {
+        consume_token(); // "print" token
+        Expr* expr = expression();
+        if (!expr) {
+            return nullptr;
+        }
+
+        consume_token();
+        check_semicolon();
+        consume_token();
+
+        PrintStmt* stmt = new PrintStmt;
+        stmt->expr = expr;
+        return stmt;
+    }
+
+    Stmt* statement() {
+        switch (current_token()->type) {
+            case Token::Type::PRINT: return print_stmt();
+            default: return expr_stmt();
+        }
+    }
+
+    void program() {
+        while (current_token()) {
+            Stmt* stmt = statement();
+            if (!stmt) {
+                return;
+            }
+            stmts.emplace_back(stmt);
+        }
+    }
+
+    void free_stmts() {
+        for (Stmt* stmt : stmts) {
+            if (stmt) delete stmt;
+        }
+    }
+
     void parse() {
         if (tokens.size() == 0) {
             return;
         }
 
+
         index = 0;
-        root_expr = expression();
+        free_stmts();
+        stmts = {};
+
+
+        program();
 
         consume_token();
         if (current_token()) {
@@ -1127,7 +1267,7 @@ private:
     }
 
 public:
-    Expr* root_expr = nullptr;
+    std::vector<Stmt*> stmts;
     std::vector<Token> tokens;
     size_t index = 0;
 
@@ -1138,9 +1278,7 @@ public:
     }
 
     ~Parser() {
-        if (root_expr) {
-            delete root_expr;
-        }
+        free_stmts();
     }
 };
 
@@ -1159,23 +1297,6 @@ void show_tokens(const std::string& code) {
     }
 }
 
-void show_ast(const std::string& code) {
-    Scanner scanner(code);
-    if (scanner.error) {
-        report_error(*scanner.error, scanner.lines);
-        return;
-    }
-
-    Parser parser(std::move(scanner.tokens));
-    if (parser.error) {
-        report_error(*parser.error, scanner.lines);
-        return;
-    }
-    if (parser.root_expr) {
-        std::cout << parser.root_expr->str() << std::endl;
-    }
-}
-
 void evaluate(const std::string& code) {
     Scanner scanner(code);
     if (scanner.error) {
@@ -1189,11 +1310,21 @@ void evaluate(const std::string& code) {
         return;
     }
 
+    for (Stmt* stmt : parser.stmts) {
+        std::optional<Stmt::Error> error = stmt->execute();
+        if (error) {
+            report_error(*error, scanner.lines);
+            return;
+        }
+    }
+
+    /*
     Expr* expr = parser.root_expr;
     if (!expr) {
         std::cerr << "No expression to evaluate." << std::endl;
         return;
     }
+
 
     Expr::Result result = expr->evaluate();
     if (!std::holds_alternative<Literal>(result)) {
@@ -1206,6 +1337,7 @@ void evaluate(const std::string& code) {
 
     Literal actual_result = std::get<Literal>(result);
     std::cout << actual_result.str() << std::endl;
+    */
 }
 
 void run(const std::string& code) {
@@ -1217,11 +1349,6 @@ void run(const std::string& code) {
 void file_show_tokens(const char* filename) {
     std::string code = str_from_file(filename);
     show_tokens(code);
-}
-
-void file_show_ast(const char* filename) {
-    std::string code = str_from_file(filename);
-    show_ast(code);
 }
 
 void file_run(const char* filename) {
@@ -1252,8 +1379,6 @@ int main(int argc, char** argv) {
         std::string file = argv[2];
         if (command == "tokens") {
             file_show_tokens(file.c_str());
-        } else if (command == "ast") {
-            file_show_ast(file.c_str());
         } else if (command == "exec") {
             run(argv[2]);
         } else {
