@@ -1290,7 +1290,10 @@ private:
         }
 
         consume_token();
-        check_semicolon();
+        if (!check_semicolon()) {
+            add_error_with_current_token(Error::Type::SEMICOLON_EXPECTED);
+            return nullptr;
+        }
         consume_token();
 
         ExprStmt* stmt = new ExprStmt;
@@ -1306,7 +1309,10 @@ private:
         }
 
         consume_token();
-        check_semicolon();
+        if (!check_semicolon()) {
+            add_error_with_current_token(Error::Type::SEMICOLON_EXPECTED);
+            return nullptr;
+        }
         consume_token();
 
         PrintStmt* stmt = new PrintStmt;
@@ -1323,13 +1329,21 @@ private:
 
     Stmt* var_decl_assignment(const std::string& identifier) {
         size_t var_decl_location = index;
-        consume_token();
+
+        consume_token(); // "=" token
         Expr* expr = expression();
         if (!expr) {
             index = var_decl_location;
             add_error_with_current_token(Error::Type::EXPRESSION_EXPECTED);
             return nullptr;
         }
+
+        consume_token();
+        if (!check_semicolon()) {
+            add_error_with_current_token(Error::Type::SEMICOLON_EXPECTED);
+            return nullptr;
+        }
+        consume_token();
 
         VarDecl* stmt = new VarDecl;
         stmt->identifier = identifier;

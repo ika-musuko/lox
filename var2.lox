@@ -1,0 +1,9 @@
+2;
+2 * 3;
+print 2;
+print 2 * 3;
+var a = 2;
+var b = 2 + 3;
+var c = (2 + 3);
+var d = 7 * c;
+print d;

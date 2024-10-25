@@ -10,7 +10,7 @@ statement = exprStmt
 exprStmt  = expression ";" ;
 printStmt = "print" expression ";" ;
 
-expression = ( equality )? ;
+expression = equality ;
 
 equality       = comparison ( ( "==" | "!=" ) comparison )* ;
 comparison     = additive ( ( "<" | "<=" | ">" | ">=" ) additive )* ;
