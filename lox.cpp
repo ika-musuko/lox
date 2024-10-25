@@ -513,7 +513,7 @@ struct Literal {
     {
     }
 
-    std::string str() const {
+    std::string debug_str() const {
         switch (type) {
             case Type::NIL:    return "nil";
             case Type::NUMBER: return std::to_string(std::get<double>(value));
@@ -523,7 +523,7 @@ struct Literal {
         }
     }
 
-    std::string print() const {
+    std::string str() const {
         switch (type) {
             case Type::NIL:    return "nil";
             case Type::NUMBER: return std::to_string(std::get<double>(value));
@@ -619,6 +619,11 @@ struct Expr {
         }
     }
 
+    static bool is_string_and_number(const Literal& lhs, const Literal& rhs) {
+        return (lhs.type == Literal::Type::STRING && rhs.type == Literal::Type::NUMBER)
+            || (lhs.type == Literal::Type::NUMBER && rhs.type == Literal::Type::STRING);
+    }
+
     Result evaluate(const ProgramState& program_state) const {
         if (op == Op::LITERAL) {
             return literal;
@@ -639,7 +644,8 @@ struct Expr {
 
             Result operand = children[0]->evaluate(program_state);
             if (std::holds_alternative<ResultError>(operand)) {
-                return ResultError::INVALID_UNARY_OPERAND;
+                ResultError error = std::get<ResultError>(operand);
+                return error;
             }
 
             const Literal& operand_literal = std::get<Literal>(operand);
@@ -684,12 +690,14 @@ struct Expr {
 
             Result lhs_result = children[0]->evaluate(program_state);
             if (std::holds_alternative<ResultError>(lhs_result)) {
-                return ResultError::INVALID_BINARY_OPERAND;
+                ResultError error = std::get<ResultError>(lhs_result);
+                return error;
             }
 
             Result rhs_result = children[1]->evaluate(program_state);
             if (std::holds_alternative<ResultError>(rhs_result)) {
-                return ResultError::INVALID_BINARY_OPERAND;
+                ResultError error = std::get<ResultError>(rhs_result);
+                return error;
             }
 
             const Literal& lhs = std::get<Literal>(lhs_result);
@@ -740,6 +748,13 @@ struct Expr {
                     case Op::IS_EQUAL:     return l == r;
                     case Op::IS_NOT_EQUAL: return l != r;
 
+                    default: break;
+                }
+            } else if (is_string_and_number(lhs, rhs)) {
+                std::string l = lhs.str();
+                std::string r = rhs.str();
+                switch (op) {
+                    case Op::ADD: return l + r;
                     default: break;
                 }
             }
@@ -854,7 +869,7 @@ struct Expr {
 
     std::string str() const {
         if (op == Op::LITERAL) {
-            return literal.str();
+            return literal.debug_str();
         }
 
         std::ostringstream oss;
@@ -875,9 +890,8 @@ struct Stmt {
         std::optional<Expr::ResultError> expr_error = std::nullopt;
 
         enum class Type {
-            PRINT,
-            VAR_ALREADY_DECLARED,
-            VAR_EXPRESSION_EVALUATION_FAILED,
+            EVALUATE_FAILED,
+            ALREADY_DECLARED,
         } type;
 
         std::string str() const {
@@ -886,7 +900,7 @@ struct Stmt {
             oss << "ERROR [Execution]: ";
             oss << explain();
             if (expr_error) {
-                oss << "because: " << Expr::explain_result_error(*expr_error) << " ";
+                oss << "because:\n      " << Expr::explain_result_error(*expr_error) << " ";
             }
             oss << "on line " << line;
 
@@ -895,9 +909,8 @@ struct Stmt {
 
         std::string explain() const {
             switch (type) {
-                case Type::PRINT: return "Failure to print expression ";
-                case Type::VAR_ALREADY_DECLARED: return "Variable with this identifier already declared";
-                case Type::VAR_EXPRESSION_EVALUATION_FAILED: return "Could not evaulate the expression ";
+                case Type::EVALUATE_FAILED: return "[EVALUATE_FAILED] Failure to evaluate expression ";
+                case Type::ALREADY_DECLARED: return "[ALREADY_DECLARED] Variable with this identifier already declared";
                 default: "Unknown";
             }
         }
@@ -915,7 +928,7 @@ struct ExprStmt : public Stmt {
             Expr::ResultError expr_error = std::get<Expr::ResultError>(result);
             Stmt::Error stmt_error;
             stmt_error.line = line;
-            stmt_error.type = Stmt::Error::Type::PRINT;
+            stmt_error.type = Stmt::Error::Type::EVALUATE_FAILED;
             stmt_error.expr_error = expr_error;
             return stmt_error;
         }
@@ -935,13 +948,13 @@ struct PrintStmt : public Stmt {
             Expr::ResultError expr_error = std::get<Expr::ResultError>(result);
             Stmt::Error stmt_error;
             stmt_error.line = line;
-            stmt_error.type = Stmt::Error::Type::PRINT;
+            stmt_error.type = Stmt::Error::Type::EVALUATE_FAILED;
             stmt_error.expr_error = expr_error;
             return stmt_error;
         }
 
         Literal literal = std::get<Literal>(result);
-        std::cout << literal.print() << std::endl;
+        std::cout << literal.str() << std::endl;
 
         return std::nullopt;
     }
@@ -955,7 +968,7 @@ struct VarDecl : public Stmt {
         if (program_state.get_var(identifier)) {
             Stmt::Error error;
             error.line = line;
-            error.type = Stmt::Error::Type::VAR_ALREADY_DECLARED;
+            error.type = Stmt::Error::Type::ALREADY_DECLARED;
             return error;
         }
 
@@ -965,7 +978,7 @@ struct VarDecl : public Stmt {
                 Expr::ResultError expr_error = std::get<Expr::ResultError>(result);
                 Stmt::Error stmt_error;
                 stmt_error.line = line;
-                stmt_error.type = Stmt::Error::Type::VAR_EXPRESSION_EVALUATION_FAILED;
+                stmt_error.type = Stmt::Error::Type::EVALUATE_FAILED;
                 stmt_error.expr_error = expr_error;
                 return stmt_error;
             }
@@ -1029,7 +1042,7 @@ public:
                     oss << "[INVALID_UNARY_OPERAND] Invalid unary operand ";
                     break;
                 case Type::INVALID_UNARY_OPERATOR:
-                    oss << "[INVALID_UNARY_OPERAND] Invalid unary operator, expected \"-\" or \"!\" ";
+                    oss << "[INVALID_UNARY_OPERATOR] Invalid unary operator, expected \"-\" or \"!\" ";
                     break;
                 case Type::BINARY_LHS_EXPECTED:
                     oss << "[BINARY_LHS_EXPECTED] A number, string, boolean, nil, or (parenthesized expression) is expected before the binary operator ";
@@ -1041,7 +1054,7 @@ public:
                     oss << "[BINARY_RHS_EXPECTED] A number, string, boolean, nil, or (parenthesized expression) is expected after the binary operator ";
                     break;
                 case Type::INVALID_BINARY_OPERAND:
-                    oss << "[INVALID_UNARY_OPERAND] Invalid binary operand ";
+                    oss << "[INVALID_BINARY_OPERAND] Invalid binary operand ";
                     break;
                 case Type::SEMICOLON_EXPECTED:
                     oss << "[SEMICOLON_EXPECTED] Semicolon ; expected at end of line ";
@@ -1294,9 +1307,11 @@ private:
             add_error_with_current_token(Error::Type::SEMICOLON_EXPECTED);
             return nullptr;
         }
+        int line = current_token()->line;
         consume_token();
 
         ExprStmt* stmt = new ExprStmt;
+        stmt->line = line;
         stmt->expr = expr;
         return stmt;
     }
@@ -1313,9 +1328,11 @@ private:
             add_error_with_current_token(Error::Type::SEMICOLON_EXPECTED);
             return nullptr;
         }
+        int line = current_token()->line;
         consume_token();
 
         PrintStmt* stmt = new PrintStmt;
+        stmt->line = line;
         stmt->expr = expr;
         return stmt;
     }
@@ -1343,9 +1360,11 @@ private:
             add_error_with_current_token(Error::Type::SEMICOLON_EXPECTED);
             return nullptr;
         }
+        int line = current_token()->line;
         consume_token();
 
         VarDecl* stmt = new VarDecl;
+        stmt->line = line;
         stmt->identifier = identifier;
         stmt->expr = expr;
         return stmt;
